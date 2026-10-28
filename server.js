@@ -5,7 +5,34 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 24790;
 const LETTERS = 'ABCDEFGHJKMNPQRSTVWXYZ';
 
-const server = http.createServer((req, res) => {
+// ─── Tower Leaderboard (in-memory, top 50 entries) ────────────────────────────
+const TOWER_MAX_ENTRIES = 50;
+const towerBoard = new Map(); // userId -> { name, floor, updated_at }
+
+function getTowerLeaderboard() {
+  const list = Array.from(towerBoard.values());
+  list.sort((a, b) => b.floor - a.floor);
+  return list.slice(0, TOWER_MAX_ENTRIES).map((e, i) => ({
+    rank: i + 1,
+    name: e.name,
+    user: e.user,
+    floor: e.floor,
+    updated_at: e.updated_at,
+  }));
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => {
+      try { resolve(JSON.parse(data)); }
+      catch { resolve({}); }
+    });
+  });
+}
+
+const server = http.createServer(async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -20,6 +47,42 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/news') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ items: [] }));
+    return;
+  }
+
+  // ── GET /api/tower/leaderboard — ดึงตารางอันดับ ──────────────────────────
+  if (req.method === 'GET' && req.url === '/api/tower/leaderboard') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ leaderboard: getTowerLeaderboard() }));
+    return;
+  }
+
+  // ── POST /api/tower/score — บันทึกคะแนน ─────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/tower/score') {
+    const body = await readBody(req);
+    const name = String(body.name || '').trim().slice(0, 32);
+    const user = String(body.user || '').trim().slice(0, 64);
+    const floor = Math.max(1, Math.min(99999, parseInt(body.floor) || 1));
+
+    if (!name || !user) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'missing name or user' }));
+      return;
+    }
+
+    // Only update if new score is higher than existing
+    const existing = towerBoard.get(user);
+    if (!existing || floor > existing.floor) {
+      towerBoard.set(user, {
+        name,
+        user,
+        floor,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, leaderboard: getTowerLeaderboard() }));
     return;
   }
 
