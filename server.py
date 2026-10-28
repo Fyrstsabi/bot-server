@@ -112,7 +112,7 @@ async def handler(websocket):
                 await broadcast_counts()
 
             # 3. Game action relay
-            elif msg_type in ["game", "hello", "seed", "rules", "sync", "forfeit", "bye"]:
+            elif msg_type in ["game", "hello", "seed", "rules", "sync", "forfeit", "bye", "start", "act", "action", "peer_left", "peer_lost", "peer_back", "rejoined"]:
                 if current_room_code and current_room_code in rooms:
                     room = rooms[current_room_code]
                     target = room["guest"] if is_host else room["host"]
